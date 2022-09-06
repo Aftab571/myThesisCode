@@ -1,0 +1,12 @@
+/wandb
+/*.csv
+/labs.csv
+/MIMICDataObj.pt
+/MLCSV.csv
+/SAGE_conf.png
+/SVMConf.png
+/XGBoost_conf.png
+/.vscode
+/.venv
+/__pycache__
+/dataProcessing1.py

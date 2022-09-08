@@ -17,6 +17,9 @@ from random import randint
 from sentence_transformers import SentenceTransformer
 import statistics
 
+coder_model = AutoModel.from_pretrained('GanjinZero/UMLSBert_ENG')
+coder_tokenizer = AutoTokenizer.from_pretrained('GanjinZero/UMLSBert_ENG')
+
 num_of_neg_samples= 50
 num_of_pos_samples= 50
 
@@ -136,6 +139,10 @@ def evaluted_val(word):
             arr = word.split('-')
             arr = [float(i) for i in arr]
             num = Average(arr)
+
+        if word.find(',') != -1:
+            word = word.replace(',','')
+            num= float(word)
         
         
     except Exception as e:
@@ -258,7 +265,6 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
             #print(type(x))
             str_unq_val.append(x)
     print(len(str_unq_val))
-    str_unq_val
 
     for x in str_unq_val:
         new_val = evaluted_val(x)
@@ -277,6 +283,8 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
             #print(df_grp.get_group((start,end)))
             plt_result = df_labs_grp.get_group((lab))
             plt_result['value'] = plt_result['value'].astype(float)
+            scaler = MinMaxScaler()
+            plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
             newf = newf.append(plt_result, ignore_index=True)
             #final_lst.append(plt_result.to_dict())
         
@@ -292,21 +300,29 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
                     plt_result['value']= np.where(plt_result["value"] == "N", '90', plt_result["value"])
                     plt_result['value']= np.where(plt_result["value"] == "TR", '100', plt_result["value"])
                     plt_result['value'] = plt_result['value'].astype(float)
+                    scaler = MinMaxScaler()
+                    plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
                     newf = newf.append(plt_result, ignore_index=True)
                 elif lab == 51479:
                     plt_result['value'] =plt_result['value'].map(lambda y: evaluate51479(str(y)))
                     plt_result['value'] = plt_result['value'].astype(float)
+                    scaler = MinMaxScaler()
+                    plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
                     newf = newf.append(plt_result, ignore_index=True)
                 else:
                     #plt_result['value'] = plt_result['value'].astype(str)
                     plt_result['value'] =label_encoder.fit_transform(plt_result['value'])
-                    plt_result['value'] = plt_result['value'].astype(float) 
+                    plt_result['value'] = plt_result['value'].astype(float)
+                    scaler = MinMaxScaler()
+                    plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
                     #plt_result['value'] =plt_result['value'].map(lambda y: label_encoder.fit_transform([y])[0] if type(y)==str else y)
                     newf = newf.append(plt_result, ignore_index=True)
                 continue
             except Exception as e:
                 print("Exception at appending:",str(e),str(lab))
                 plt_result= plt_result[pd.to_numeric(plt_result['value'], errors='coerce').notnull()]
+                scaler = MinMaxScaler()
+                plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
                 newf = newf.append(plt_result, ignore_index=True)
                 continue
     #print(newf)
@@ -359,6 +375,27 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
         df.columns = df.columns.str.replace('[^\w\s]', '_')
 
     return df
+
+def evaluate_drugs(df):
+    unq_vals= df.dosage_val.unique()
+    
+
+    str_unq_val=[]
+    for x in unq_vals:
+        #print(type(x))
+        if isint(x) or isfloat(x):
+            continue
+        else:
+            #print(type(x))
+            str_unq_val.append(x)
+    print(len(str_unq_val))
+
+    for x in str_unq_val:
+        new_val = evaluted_val(x)
+        if new_val is not None:
+            df['dosage_val']= np.where(df["dosage_val"] == x, new_val, df["dosage_val"])
+    return df
+
 
 def mergeLabstoAdmissions(df_inner):
     df_inner['value']= df_inner['value'].astype(float)
@@ -442,7 +479,7 @@ def getData():
     hadm_arr = df_hadm.groupby(['patientId']).first()['adm_id'].tolist()
 
 
-    hadm_arr = hadm_arr[0:500]
+    #hadm_arr = hadm_arr[0:200]
 
    
 
@@ -510,7 +547,16 @@ def getData():
 
     df_drug =  conn.fetch_data(drug_query)
 
-    return df_lab, df_drug, df_admission, df_diagnosis
+
+    vitals_query = """MATCH (n:Admissions)-[r:HAS_CHART_EVNT]->(m:D_Items) where n.hadm_id in """+str(hadm_arr)+""" and m.itemid in [618,51,114,198,646] and duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).hours<= 24*1 RETURN n.hadm_id as hadm_id, m.label as name, m.itemid as itemid,r.value as value,r.valueUOM as UOM, r.charttime as time"""
+
+    df_vitals =  conn.fetch_data(vitals_query)
+
+    same_demo_query = """MATCH (n:Admissions)-[r:SAME_DEMOGRAPH]->(m:Admissions) where n.hadm_id in """+str(hadm_arr)+""" and m.hadm_id in """+str(hadm_arr)+""" RETURN n.hadm_id as start, m.hadm_id as end, n.admission_type as atype"""
+
+    df_demo =  conn.fetch_data(same_demo_query)
+
+    return df_lab, df_drug, df_admission, df_diagnosis,df_vitals,df_demo
 
 def sentence_emd(sent):
     inputs = coder_tokenizer(sent,padding=True, truncation=True, max_length = 200, return_tensors='pt')
@@ -544,7 +590,7 @@ def equalizeImbalance(df_adm):
 def getPreprocessData(type,edge_merge,grp_aggr):
     st_time_nodes = time.time()
 
-    df_labs, df_drugs, df_admission, df_diagnosis = getData()
+    df_labs, df_drugs, df_admission, df_diagnosis,df_vitals,df_demo = getData()
     
 
     if edge_merge:
@@ -560,6 +606,7 @@ def getPreprocessData(type,edge_merge,grp_aggr):
 
     
     df_labs = preprocess_Labs(df_labs,type,grp_aggr)
+    df_drugs = evaluate_drugs(df_drugs)
     if type=='ML':
         df_labs = df_labs.reset_index(drop=True)
         unq_hadm = df_labs['hadm_id'].unique()
@@ -571,10 +618,10 @@ def getPreprocessData(type,edge_merge,grp_aggr):
 
 
          #edit for equalizining class imbalance
-        # eql_lst = equalizeImbalance(df_admission)
-        # df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
-        # df_labs = df_labs[df_labs['hadm_id'].isin(eql_lst)]
-        # df_labs = df_labs.reset_index(drop=True)
+        eql_lst = equalizeImbalance(df_admission)
+        df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
+        df_labs = df_labs[df_labs['hadm_id'].isin(eql_lst)]
+        df_labs = df_labs.reset_index(drop=True)
 
 
         #df_labs = df_labs.fillna(0)
@@ -593,13 +640,21 @@ def getPreprocessData(type,edge_merge,grp_aggr):
 
         #edit for equalizining class imbalance
 
-        # eql_lst = equalizeImbalance(df_admission)
-        # df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
-        # df_labs = df_labs[df_labs['adm_id'].isin(eql_lst)]
-        # df_labs = df_labs.reset_index(drop=True)
+        eql_lst = equalizeImbalance(df_admission)
 
-        # df_drugs= df_drugs.reset_index(drop=True)
-        # df_diagnosis= df_diagnosis.reset_index(drop=True)
+        df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
+        df_labs = df_labs[df_labs['adm_id'].isin(eql_lst)]
+        df_vitals = df_vitals[df_vitals['hadm_id'].isin(eql_lst)]
+        df_drugs = df_drugs[df_drugs['hadm_id'].isin(eql_lst)]
+        df_diagnosis = df_diagnosis[df_diagnosis['hadm_id'].isin(eql_lst)]
+        df_demo = df_demo[df_demo['start'].isin(eql_lst)]
+
+
+        df_labs = df_labs.reset_index(drop=True)
+        df_demo = df_demo.reset_index(drop=True)
+        df_vitals = df_vitals.reset_index(drop=True)
+        df_drugs= df_drugs.reset_index(drop=True)
+        df_diagnosis= df_diagnosis.reset_index(drop=True)
         print("After:",df_admission.shape)
 
         dict_start = map_edge_list(df_admission['hadm_id'].values.tolist())
@@ -607,17 +662,20 @@ def getPreprocessData(type,edge_merge,grp_aggr):
         #vals = df_labs['adm_id'].values.tolist()
 
         df_admission['admmision_id'] = df_admission['hadm_id']
-
+        label_encoder = preprocessing.LabelEncoder()
     
-        # df_drugs['drug_name']  = label_encoder.fit_transform(df_drugs['drug_name'])
-        # df_diagnosis['Embeddings'] = df_diagnosis['title'].apply(lambda x:  np.array(sentence_emd(x)))
-        # df_diagnosis_features = expandEmbeddings(df_diagnosis)
-
+        df_drugs['drug_name']  = label_encoder.fit_transform(df_drugs['drug_name'])
+        df_diagnosis['Embeddings'] = df_diagnosis['title'].apply(lambda x:  np.array(sentence_emd(x)))
+        df_diagnosis_features = expandEmbeddings(df_diagnosis)
 
         df_labs["adm_id"]= df_labs["adm_id"].map(dict_start)
-        # df_drugs["hadm_id"]= df_drugs["hadm_id"].map(dict_start)
-        # df_diagnosis["hadm_id"]= df_diagnosis["hadm_id"].map(dict_start)
+       
+        df_vitals["hadm_id"]= df_vitals["hadm_id"].map(dict_start)
+        df_drugs["hadm_id"]= df_drugs["hadm_id"].map(dict_start)
+        df_diagnosis["hadm_id"]= df_diagnosis["hadm_id"].map(dict_start)
         df_admission["hadm_id"] = df_admission["hadm_id"].map(dict_start)
+        df_demo["start"] = df_demo["start"].map(dict_start)
+        df_demo["end"] = df_demo["end"].map(dict_start)
 
         df_admission.index = df_admission['hadm_id']
         df_admission= df_admission.sort_index()
@@ -632,24 +690,30 @@ def getPreprocessData(type,edge_merge,grp_aggr):
         # df_drugs= df_drugs[pd.to_numeric(df_drugs['dosage_val'], errors='coerce').notnull()]
         # df_drugs['dosage_val'] = df_drugs['dosage_val'].astype(float)
         # df_drugs = df_drugs.reset_index(drop=True)
+        df_demo.dropna(inplace=True)
+        df_demo = df_demo.reset_index(drop=True)
 
         df_labs['index_col'] = df_labs.index
+        df_vitals['index_col'] = df_vitals.index
         df_admission['index_col'] = df_admission.index
-
-
-        # df_drugs['index_col'] = df_drugs.index
-        # df_diagnosis['index_col'] = df_diagnosis.index
+        df_drugs['index_col'] = df_drugs.index
+        df_diagnosis['index_col'] = df_diagnosis.index
+        df_demo['index_col'] = df_demo.index
 
         df_labs['value'] = pd.to_numeric(df_labs['value'], errors='coerce',downcast='float')
+        df_vitals['value'] = pd.to_numeric(df_vitals['value'], errors='coerce',downcast='float')
+        df_drugs['dosage_val']= pd.to_numeric(df_drugs['dosage_val'], errors='coerce', downcast='float')
         #df_labs['value'] = df_labs['value'].astype(float)
-        label_encoder = preprocessing.LabelEncoder()
+        
         df_admission['gender']= label_encoder.fit_transform(df_admission['gender']) 
         df_admission['marital']= label_encoder.fit_transform(df_admission['marital']) 
         df_admission['ethnicity']= label_encoder.fit_transform(df_admission['ethnicity']) 
         df_admission['religion']= label_encoder.fit_transform(df_admission['religion'])
+        df_vitals['name']= label_encoder.fit_transform(df_vitals['name'])
+        df_demo['atype']= label_encoder.fit_transform(df_demo['atype'])
 
 
         print("Patient label count: ",df_admission['label'].value_counts())
 
-        return df_admission,df_diagnosis,df_drugs,df_labs
+        return df_admission,df_diagnosis,df_drugs,df_labs,df_vitals,df_diagnosis_features,df_demo
 

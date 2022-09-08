@@ -115,19 +115,16 @@ class SAGE(torch.nn.Module):
     def __init__(self, hidden_channels, out_channels,aggr):
         super().__init__()
         torch.manual_seed(seed)
-        self.conv1 = SAGEConv((-1,-1), out_channels,aggr=aggr)  # TODO  64
-        # self.conv2 = SAGEConv((-1,-1), 64,aggr=aggr)
-        # self.conv3 = SAGEConv((-1,-1), 32,aggr=aggr)
-        # self.lin1 = Linear(-1, out_channels)
+        self.conv1 = SAGEConv((-1,-1), 64,aggr=aggr)  # TODO  64
+        self.conv2 = SAGEConv((-1,-1), out_channels,aggr=aggr)
+        self.lin1 = Linear(-1, out_channels)
         
     def forward(self, x, edge_index):
         x = self.conv1(x, edge_index)
-        # x = F.elu(x)
-        # x = self.conv2(x, edge_index)
-        # x = F.elu(x)
-        # x = self.conv3(x, edge_index)
-        # x = F.elu(x)
-        # x = self.lin1(x)
+        x = F.elu(x)
+        x = self.conv2(x, edge_index)
+        x = F.elu(x)
+        x = self.lin1(x)
         return x
 
 
@@ -252,7 +249,8 @@ def main():
     heatmaps=[]
     st_time_nodes = time.time()
 
-    df_admission,df_diagnosis,df_drugs,df_labs = getPreprocessData('Graph',edge_merge=False,grp_aggr='mean')
+    df_admission,df_diagnosis,df_drugs,df_labs,df_vitals,df_diagnosis_features,df_demo = getPreprocessData('Graph',edge_merge=False,grp_aggr='mean')
+    df_demo.to_csv('demo.csv')
  
     end_time = time.time()
 
@@ -276,30 +274,43 @@ def main():
             data['Admission'].val_mask = i['val_mask_set'].to(device)
             data['Admission'].test_mask = test_mask
             data['Labs'].x = torch.tensor(df_labs[['fluid','category']].values, dtype = torch.float).to(device) #df_labs.loc[:, ~df_labs.columns.isin(['hadm_id','lab_name'])].values.tolist()
+
+
             data['Admission', 'has_labs', 'Labs'].edge_index = torch.tensor(df_labs[['adm_id','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
             data['Admission', 'has_labs', 'Labs'].edge_attr  = torch.tensor(df_labs[['value']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
 
             data['Labs', 'rev_has_labs', 'Admission'].edge_index = torch.tensor(df_labs[['index_col','adm_id']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
             data['Labs', 'rev_has_labs', 'Admission'].edge_attr  = torch.tensor(df_labs[['value']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
 
-            # print(df_drugs[['dosage_val']].values)
-            # data['Drugs'].x = torch.tensor(df_drugs[['drug_name']].values, dtype = torch.float).to(device)
-            # data['Admission', 'has_drugs', 'Drugs'].edge_index = torch.tensor(df_drugs[['hadm_id','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
-            # data['Admission', 'has_drugs', 'Drugs'].edge_attr  = torch.tensor(df_drugs[['dosage_val']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
 
-            # data['Drugs', 'rev_has_drugs', 'Admission'].edge_index = torch.tensor(df_drugs[['index_col','hadm_id']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
-            # data['Drugs', 'rev_has_drugs', 'Admission'].edge_attr  = torch.tensor(df_drugs[['dosage_val']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
+            data['Vitals'].x = torch.tensor(df_vitals[['name']].values, dtype = torch.float).to(device)
+            data['Admission', 'has_vitals', 'Vitals'].edge_index = torch.tensor(df_vitals[['hadm_id','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Admission', 'has_vitals', 'Vitals'].edge_attr  = torch.tensor(df_vitals[['value']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
+
+            data['Vitals', 'rev_has_vitals', 'Admission'].edge_index = torch.tensor(df_vitals[['index_col','hadm_id']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Vitals', 'rev_has_vitals', 'Admission'].edge_attr  = torch.tensor(df_vitals[['value']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
+
+            # print(df_drugs[['dosage_val']].values)
+            data['Drugs'].x = torch.tensor(df_drugs[['drug_name']].values, dtype = torch.float).to(device)
+            data['Admission', 'has_drugs', 'Drugs'].edge_index = torch.tensor(df_drugs[['hadm_id','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Admission', 'has_drugs', 'Drugs'].edge_attr  = torch.tensor(df_drugs[['dosage_val']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
+
+            data['Drugs', 'rev_has_drugs', 'Admission'].edge_index = torch.tensor(df_drugs[['index_col','hadm_id']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Drugs', 'rev_has_drugs', 'Admission'].edge_attr  = torch.tensor(df_drugs[['dosage_val']].values.tolist(), dtype=torch.float).t().contiguous().to(device)
 
             # #df_diagnosis.iloc[:,4:].drop('index_col',axis=1).values
-            # data['Diagnosis'].x = torch.tensor(df_diagnosis_features.values,dtype = torch.float).to(device)
-            # data['Admission', 'has_diagnosis', 'Diagnosis'].edge_index = torch.tensor(df_diagnosis[['hadm_id','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
-            # data['Diagnosis', 'rev_has_diagnosis', 'Admission'].edge_index = torch.tensor(df_diagnosis[['index_col','hadm_id']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Diagnosis'].x = torch.tensor(df_diagnosis_features.values,dtype = torch.float).to(device)
+            data['Admission', 'has_diagnosis', 'Diagnosis'].edge_index = torch.tensor(df_diagnosis[['hadm_id','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Diagnosis', 'rev_has_diagnosis', 'Admission'].edge_index = torch.tensor(df_diagnosis[['index_col','hadm_id']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
             
+            data['Demography'].x = torch.tensor(df_demo[['atype']].values.tolist(),dtype = torch.float).to(device)
+            data['Admission', 'has_same_demo', 'Demography'].edge_index = torch.tensor(df_demo[['start','index_col']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
+            data['Demography', 'rev_same_demo', 'Admission'].edge_index = torch.tensor(df_demo[['index_col','start']].values.tolist(), dtype=torch.long).t().contiguous().to(device)
 
             data.num_node_features = 3
             data.num_classes = len(df_labs['label'].unique())
             #data = T.ToUndirected()(data.to(device))
-            data = T.NormalizeFeatures()(data.to(device))
+            #data = T.NormalizeFeatures()(data.to(device))
             #data = T.RandomNodeSplit()(data)
             dataset = data.to(device)
 
@@ -317,8 +328,8 @@ def main():
             # batch = next(iter(train_loader)) 
             sampler = ImbalancedSampler(data['Admission'].y, input_nodes=data['Admission'].train_mask)  #, input_nodes=data['Admission'].train_mask
             # print(data.edge_types)
-            loader = NeighborLoader(data, input_nodes=('Admission', data['Admission'].train_mask), batch_size=2000,
-                             num_neighbors={key: [30] * 2 for key in data.edge_types})  #sampler=sampler
+            loader = NeighborLoader(data, input_nodes=('Admission', data['Admission'].train_mask), batch_size=128,
+                             num_neighbors={key: [10] * 2 for key in data.edge_types})  #sampler=sampler
             
             if data:
                 print(data)
@@ -331,8 +342,8 @@ def main():
                     model = model.to(device)
                     print(model)
                     model = to_hetero(model, data.metadata(), aggr=aggr).to(device)
-                    optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
-                    criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.15, 0.85])).to(device)  #weight=torch.tensor([0.15, 0.85])
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.002, weight_decay=5e-4)
+                    criterion = torch.nn.CrossEntropyLoss().to(device)  #weight=torch.tensor([0.15, 0.85])
                 # criterion =  FocalLoss(mode="binary", alpha=0.25, gamma=2)
                 #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.1)
                 for epoch in range(1, 101):

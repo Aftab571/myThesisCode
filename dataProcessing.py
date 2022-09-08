@@ -479,7 +479,7 @@ def getData():
     hadm_arr = df_hadm.groupby(['patientId']).first()['adm_id'].tolist()
 
 
-    #hadm_arr = hadm_arr[0:200]
+    hadm_arr = hadm_arr[0:200]
 
    
 

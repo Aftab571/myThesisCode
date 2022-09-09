@@ -250,7 +250,7 @@ def main():
     st_time_nodes = time.time()
 
     df_admission,df_diagnosis,df_drugs,df_labs,df_vitals,df_diagnosis_features,df_demo = getPreprocessData('Graph',edge_merge=False,grp_aggr='mean')
-    df_demo.to_csv('demo.csv')
+
  
     end_time = time.time()
 
@@ -263,11 +263,11 @@ def main():
     print(device)
     for aggr in ['sum']:
         print(aggr)
-        #if not os.path.exists('MIMICDataObj.pt'):
+        
         for i in mask_list:
             data = HeteroData()
             
-            
+
             data['Admission'].x = torch.tensor(df_admission[['gender','age']].values, dtype = torch.float).to(device)  #'ethnicity','marital','religion','gender','age'
             data['Admission'].y =  torch.tensor(df_admission['label'].values, dtype = torch.long).to(device)
             data['Admission'].train_mask = i['train_mask_set'].to(device)
@@ -329,7 +329,7 @@ def main():
             sampler = ImbalancedSampler(data['Admission'].y, input_nodes=data['Admission'].train_mask)  #, input_nodes=data['Admission'].train_mask
             # print(data.edge_types)
             loader = NeighborLoader(data, input_nodes=('Admission', data['Admission'].train_mask), batch_size=128,
-                             num_neighbors={key: [10] * 2 for key in data.edge_types})  #sampler=sampler
+                             num_neighbors={key: [10] * 2 for key in data.edge_types}, sampler=sampler)  #sampler=sampler
             
             if data:
                 print(data)

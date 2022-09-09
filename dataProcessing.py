@@ -325,8 +325,7 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
                 plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
                 newf = newf.append(plt_result, ignore_index=True)
                 continue
-    #print(newf)
-    newf.to_csv("afterProcess.csv")
+
     df = newf
     #newf = pd.DataFrame(final_lst)
     #print("Before Pivot:", df)
@@ -347,8 +346,6 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
         df.rename(columns=code_dict,inplace=True)
         #print("After Pivot:", df)
     
-        # newf.to_csv('newf.csv')
-        # newdf = pd.read_csv('newf.csv')
         # newdf.reset_index(drop=True)
         # df = newf
     
@@ -479,7 +476,7 @@ def getData():
     hadm_arr = df_hadm.groupby(['patientId']).first()['adm_id'].tolist()
 
 
-    hadm_arr = hadm_arr[0:200]
+    # hadm_arr = hadm_arr[0:200]
 
    
 
@@ -640,14 +637,14 @@ def getPreprocessData(type,edge_merge,grp_aggr):
 
         #edit for equalizining class imbalance
 
-        eql_lst = equalizeImbalance(df_admission)
+        # eql_lst = equalizeImbalance(df_admission)
 
-        df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
-        df_labs = df_labs[df_labs['adm_id'].isin(eql_lst)]
-        df_vitals = df_vitals[df_vitals['hadm_id'].isin(eql_lst)]
-        df_drugs = df_drugs[df_drugs['hadm_id'].isin(eql_lst)]
-        df_diagnosis = df_diagnosis[df_diagnosis['hadm_id'].isin(eql_lst)]
-        df_demo = df_demo[df_demo['start'].isin(eql_lst)]
+        # df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
+        # df_labs = df_labs[df_labs['adm_id'].isin(eql_lst)]
+        # df_vitals = df_vitals[df_vitals['hadm_id'].isin(eql_lst)]
+        # df_drugs = df_drugs[df_drugs['hadm_id'].isin(eql_lst)]
+        # df_diagnosis = df_diagnosis[df_diagnosis['hadm_id'].isin(eql_lst)]
+        # df_demo = df_demo[df_demo['start'].isin(eql_lst)]
 
 
         df_labs = df_labs.reset_index(drop=True)

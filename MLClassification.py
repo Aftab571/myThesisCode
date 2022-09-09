@@ -53,7 +53,6 @@ end_time = time.time()
 
 print("Time for Preprocessing data (ML): ",end_time-st_time_nodes)
 df['label'] = df['label'].astype(int)
-df.to_csv('MLCSV.csv')
 X = df.iloc[:,~df.columns.isin(['label','hadm_id'])]
 Y = df['label']
 

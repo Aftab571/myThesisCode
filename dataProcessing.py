@@ -374,24 +374,27 @@ def preprocess_Labs(dfLabs, type,grp_aggr):
     return df
 
 def evaluate_drugs(df):
-    unq_vals= df.dosage_val.unique()
-    
+    if df.shape[0]>0:
+        unq_vals= df.dosage_val.unique()
+        
 
-    str_unq_val=[]
-    for x in unq_vals:
-        #print(type(x))
-        if isint(x) or isfloat(x):
-            continue
-        else:
+        str_unq_val=[]
+        for x in unq_vals:
             #print(type(x))
-            str_unq_val.append(x)
-    print(len(str_unq_val))
+            if isint(x) or isfloat(x):
+                continue
+            else:
+                #print(type(x))
+                str_unq_val.append(x)
+        print(len(str_unq_val))
 
-    for x in str_unq_val:
-        new_val = evaluted_val(x)
-        if new_val is not None:
-            df['dosage_val']= np.where(df["dosage_val"] == x, new_val, df["dosage_val"])
-    return df
+        for x in str_unq_val:
+            new_val = evaluted_val(x)
+            if new_val is not None:
+                df['dosage_val']= np.where(df["dosage_val"] == x, new_val, df["dosage_val"])
+        return df
+    else:
+        return df
 
 
 def mergeLabstoAdmissions(df_inner):
@@ -458,15 +461,17 @@ def grp_labs(df,grp_arr):
     return df_grp
 
 def getData():
+    df_lab = df_drug = df_admission = df_diagnosis = df_vitals = df_demo = pd.DataFrame()
     conn = Connection()
     diagnosis_query="""MATCH (n:D_ICD_Diagnoses) where (n.long_title contains 'sepsis') or (n.long_title contains 'septicemia')  RETURN collect(n.icd9_code) as icd_arr""" 
     df_icd9 = conn.fetch_data(diagnosis_query)
     icd9_arr= df_icd9['icd_arr'][0]
     
-    #hadm_query= """MATCH (n:Admissions)-[r:DIAGNOSED]-(m:D_ICD_Diagnoses) where m.icd9_code in """+str(icd9_arr)+""" RETURN n.hadm_id as hadm"""
+    #subject_query= """MATCH (n:Admissions)-[r:DIAGNOSED]-(m:D_ICD_Diagnoses) where m.icd9_code in """+str(icd9_arr)+""" RETURN collect(distinct n.subject_id) as cols"""
 
     #hadm_query ="""MATCH (n:Note_Events) where n.category='Discharge summary' and ((toLower(n.text) contains toLower('sepsis')) or ((toLower(n.text) contains toLower('septic shock')) or ((toLower(n.text) contains toLower('severe sepsis')))))  RETURN collect(distinct n.hadm_id) as cols"""
     subject_query= """MATCH (n:Note_Events) where n.category='Discharge summary' and (toLower(n.text) contains 'sepsis' or toLower(n.text) contains 'septic') RETURN collect(distinct n.subject_id) as cols"""
+
     df_subject = conn.fetch_data(subject_query)
     subj_arr=  df_subject['cols'][0] #df_hadm['hadm'].tolist()  #
 
@@ -476,7 +481,7 @@ def getData():
     hadm_arr = df_hadm.groupby(['patientId']).first()['adm_id'].tolist()
 
 
-    # hadm_arr = hadm_arr[0:200]
+    # hadm_arr = hadm_arr[0:1000]
 
    
 
@@ -512,9 +517,7 @@ def getData():
 
     #df_pat_data = conn.fetch_data(pat_dat_query)
 
-    df_diagnosis_query = """MATCH (n:Admissions)-[r:DIAGNOSED]->(m:D_ICD_Diagnoses) where n.hadm_id in """+str(hadm_arr)+""" RETURN n.hadm_id as hadm_id, n.hospital_expire_flag as expire, m.long_title as title"""
-
-    df_diagnosis = conn.fetch_data(df_diagnosis_query)
+   
 
     adm_query= """MATCH (x:Patients)-[xr:ADMITTED]-(n:Admissions) where n.hadm_id in """+str(hadm_arr)+""" and x.subject_id in """+str(pat_arr)+""" RETURN n.subject_id as patients, n.hospital_expire_flag as label, n.marital_status as marital, n.ethnicity as ethnicity, n.religion as religion, n.hadm_id as hadm_id, x.gender as gender,duration.inSeconds(datetime(x.dob), datetime(n.admittime)).hours/8760 as age, apoc.node.degree(n, "HAS_LAB_EVENTS") AS output"""
 
@@ -528,32 +531,72 @@ def getData():
     #and m.itemid in [50813,50931,50912,50868,50983,51237,51006,50885,50960,50902,50971,50820,50825]
     # high variance : [50813,50868,50885]
     #low variance: [50960,50971,50983]
-    lab_query= """MATCH (x:Patients)-[xr:ADMITTED]-(n:Admissions)-[r:HAS_LAB_EVENTS]->(m:D_Lab_Items) where n.hadm_id in"""+str(hadm_arr)+""" and x.subject_id in """+str(pat_arr)+""" and m.itemid in [50813,50931,50912,50868,50983,51237,51006,50885,50960,50902,50971,50820,50825]  and duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).hours<= 24*1 RETURN  n.hospital_expire_flag as label,  r.value as value, r.valueUOM as units, n.marital_status as marital, n.ethnicity as ethnicity, n.religion as religion, m.fluid as fluid,  m.category as category, m.label as lab_name, n.hadm_id as adm_id,n.hadm_id as hadm_id, x.gender as gender,round(duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).seconds*1.0/(60*60),2) as diff, duration.inSeconds(datetime(x.dob), datetime(n.admittime)).hours/8760 as age, m.itemid as lab_id""" 
+    lab_query= """MATCH (x:Patients)-[xr:ADMITTED]-(n:Admissions)-[r:HAS_LAB_EVENTS]->(m:D_Lab_Items) where n.hadm_id in"""+str(hadm_arr)+""" and x.subject_id in """+str(pat_arr)+""" and duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).hours<= 24*1 RETURN  n.hospital_expire_flag as label,  r.value as value, r.valueUOM as units, n.marital_status as marital, n.ethnicity as ethnicity, n.religion as religion, m.fluid as fluid,  m.category as category, m.label as lab_name, n.hadm_id as adm_id,n.hadm_id as hadm_id, x.gender as gender,round(duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).seconds*1.0/(60*60),2) as diff, duration.inSeconds(datetime(x.dob), datetime(n.admittime)).hours/8760 as age, m.itemid as lab_id""" 
 
     #CASE WHEN n.hospital_expire_flag>0 and duration.inSeconds(datetime(n.deathtime), datetime(r.chartdate)).seconds>0 THEN 1 ELSE 0 END AS label
     #print(lab_query)
 
     df_lab = conn.fetch_data(lab_query)
     
+    df_diagnosis_query = """MATCH (n:Admissions)-[r:DIAGNOSED]->(m:D_ICD_Diagnoses) where n.hadm_id in """+str(hadm_arr)+""" RETURN n.hadm_id as hadm_id, n.hospital_expire_flag as expire, m.long_title as title"""
 
+    df_diagnosis = conn.fetch_data(df_diagnosis_query)
     
 
-    drug_query= """MATCH (n:Admissions)-[r:PRESCRIBED]->(m:DRUGS) where n.hadm_id in """+str(hadm_arr)+""" RETURN  ID(n) as start, ID(m) as end, r.STARTDATE as drug_start_date, r.ENDDATE as drug_end_date, r.dosage_val as dosage_val, r.dosage_unit as dosage_unit, r.generic_name as generic_name, m.name as drug_name, n.hadm_id as hadm_id"""
+    drug_query= """MATCH (n:Admissions)-[r:PRESCRIBED]->(m:DRUGS) where n.hadm_id in """+str(hadm_arr)+""" and r.dosage_val<>'' RETURN  ID(n) as start, ID(m) as end, r.STARTDATE as drug_start_date, r.ENDDATE as drug_end_date, r.dosage_val as dosage_val, r.dosage_unit as dosage_unit, r.generic_name as generic_name, m.name as drug_name, n.hadm_id as hadm_id"""
     # duration.inSeconds(datetime(r.STARTDATE), datetime(r.ENDDATE)).hours as drug_duration,
     #print(drug_query)
 
     df_drug =  conn.fetch_data(drug_query)
 
 
-    vitals_query = """MATCH (n:Admissions)-[r:HAS_CHART_EVNT]->(m:D_Items) where n.hadm_id in """+str(hadm_arr)+""" and m.itemid in [618,51,114,198,646] and duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).hours<= 24*1 RETURN n.hadm_id as hadm_id, m.label as name, m.itemid as itemid,r.value as value,r.valueUOM as UOM, r.charttime as time"""
+    vitals_query = """MATCH (n:Admissions)-[r:HAS_CHART_EVNT]->(m:D_Items) where n.hadm_id in """+str(hadm_arr)+""" and m.itemid in [618,51,114,198,646] and duration.inSeconds(datetime(n.admittime), datetime(r.charttime)).hours<= 24*1 and r.value<>'' RETURN n.hadm_id as hadm_id, m.label as name, m.itemid as itemid,r.value as value,r.valueUOM as UOM, r.charttime as time"""
 
     df_vitals =  conn.fetch_data(vitals_query)
 
-    same_demo_query = """MATCH (n:Admissions)-[r:SAME_DEMOGRAPH]->(m:Admissions) where n.hadm_id in """+str(hadm_arr)+""" and m.hadm_id in """+str(hadm_arr)+""" RETURN n.hadm_id as start, m.hadm_id as end, n.admission_type as atype"""
+    # same_demo_query = """MATCH (n:Admissions)-[r:SAME_DEMOGRAPH]->(m:Admissions) where n.hadm_id in """+str(hadm_arr)+""" and m.hadm_id in """+str(hadm_arr)+""" RETURN n.hadm_id as start, m.hadm_id as end, n.admission_type as atype"""
 
-    df_demo =  conn.fetch_data(same_demo_query)
+    # df_demo =  conn.fetch_data(same_demo_query)
 
     return df_lab, df_drug, df_admission, df_diagnosis,df_vitals,df_demo
+
+def preprocess_drugs(df):
+    unq_drugs = df.drug_name.unique()
+    df_drugs_grp = df.groupby(['drug_name'])
+    final_lst=[]
+    label_encoder = preprocessing.LabelEncoder() 
+    newf = pd.DataFrame(columns=df.columns)
+    for drug in unq_drugs:
+        try:
+            obj= {}
+            plt_result = df_drugs_grp.get_group((drug))
+            plt_result = plt_result[plt_result['dosage_val'].notna()]
+            plt_result['dosage_val'] = plt_result['dosage_val'].astype(float)
+            scaler = MinMaxScaler()
+            plt_result['dosage_val'] = scaler.fit_transform(plt_result[['dosage_val']].to_numpy())
+            newf = newf.append(plt_result, ignore_index=True)
+        except Exception as e:
+             print('exception in drug preprocessing',e)
+    return newf
+
+def preprocess_vitals(df):
+    unq_vitals = df.itemid.unique()
+    df_vital_grp = df.groupby(['itemid'])
+    final_lst=[]
+    label_encoder = preprocessing.LabelEncoder() 
+    newf = pd.DataFrame(columns=df.columns)
+    for vital in unq_vitals:
+        try:
+            obj= {}
+            plt_result = df_vital_grp.get_group((vital))
+            plt_result = plt_result[plt_result['value'].notna()]
+            plt_result['value'] = plt_result['value'].astype(float)
+            scaler = MinMaxScaler()
+            plt_result['value'] = scaler.fit_transform(plt_result[['value']].to_numpy())
+            newf = newf.append(plt_result, ignore_index=True)
+        except Exception as e:
+             print('exception in vital preprocessing',e)
+    return newf
 
 def sentence_emd(sent):
     inputs = coder_tokenizer(sent,padding=True, truncation=True, max_length = 200, return_tensors='pt')
@@ -586,7 +629,7 @@ def equalizeImbalance(df_adm):
 
 def getPreprocessData(type,edge_merge,grp_aggr):
     st_time_nodes = time.time()
-
+    df_diagnosis_features = pd.DataFrame()
     df_labs, df_drugs, df_admission, df_diagnosis,df_vitals,df_demo = getData()
     
 
@@ -604,6 +647,9 @@ def getPreprocessData(type,edge_merge,grp_aggr):
     
     df_labs = preprocess_Labs(df_labs,type,grp_aggr)
     df_drugs = evaluate_drugs(df_drugs)
+    if df_vitals.shape[0]>0:
+        df_vitals = preprocess_vitals(df_vitals)
+    
     if type=='ML':
         df_labs = df_labs.reset_index(drop=True)
         unq_hadm = df_labs['hadm_id'].unique()
@@ -637,14 +683,23 @@ def getPreprocessData(type,edge_merge,grp_aggr):
 
         #edit for equalizining class imbalance
 
-        # eql_lst = equalizeImbalance(df_admission)
+        eql_lst = equalizeImbalance(df_admission)
 
-        # df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
-        # df_labs = df_labs[df_labs['adm_id'].isin(eql_lst)]
-        # df_vitals = df_vitals[df_vitals['hadm_id'].isin(eql_lst)]
-        # df_drugs = df_drugs[df_drugs['hadm_id'].isin(eql_lst)]
-        # df_diagnosis = df_diagnosis[df_diagnosis['hadm_id'].isin(eql_lst)]
-        # df_demo = df_demo[df_demo['start'].isin(eql_lst)]
+        df_admission = df_admission[df_admission['hadm_id'].isin(eql_lst)]
+        df_labs = df_labs[df_labs['adm_id'].isin(eql_lst)]
+        if df_vitals.shape[0]>0:
+            df_vitals = df_vitals[df_vitals['hadm_id'].isin(eql_lst)]
+        if df_drugs.shape[0]>0:
+            df_drugs = df_drugs[df_drugs['hadm_id'].isin(eql_lst)]
+        if df_diagnosis.shape[0]>0:
+            df_diagnosis = df_diagnosis[df_diagnosis['hadm_id'].isin(eql_lst)]
+        if df_demo.shape[0]>0:
+            df_demo = df_demo[df_demo['start'].isin(eql_lst)]
+
+        if df_drugs.shape[0]>0:
+            df_drugs['dosage_val']= pd.to_numeric(df_drugs['dosage_val'], errors='coerce', downcast='float')
+            df_drugs = preprocess_drugs(df_drugs)
+            #df_drugs= df_drugs.reset_index(drop=True)
 
 
         df_labs = df_labs.reset_index(drop=True)
@@ -660,57 +715,70 @@ def getPreprocessData(type,edge_merge,grp_aggr):
 
         df_admission['admmision_id'] = df_admission['hadm_id']
         label_encoder = preprocessing.LabelEncoder()
-    
-        df_drugs['drug_name']  = label_encoder.fit_transform(df_drugs['drug_name'])
-        df_diagnosis['Embeddings'] = df_diagnosis['title'].apply(lambda x:  np.array(sentence_emd(x)))
-        df_diagnosis_features = expandEmbeddings(df_diagnosis)
+
+
+        if df_drugs.shape[0]>0:
+            df_drugs['drug_name']  = label_encoder.fit_transform(df_drugs['drug_name'])
+        if df_diagnosis.shape[0]>0:
+            df_diagnosis['Embeddings'] = df_diagnosis['title'].apply(lambda x:  np.array(sentence_emd(x)))
+            df_diagnosis_features = expandEmbeddings(df_diagnosis)
 
         df_labs["adm_id"]= df_labs["adm_id"].map(dict_start)
-       
-        df_vitals["hadm_id"]= df_vitals["hadm_id"].map(dict_start)
-        df_drugs["hadm_id"]= df_drugs["hadm_id"].map(dict_start)
-        df_diagnosis["hadm_id"]= df_diagnosis["hadm_id"].map(dict_start)
-        df_admission["hadm_id"] = df_admission["hadm_id"].map(dict_start)
-        df_demo["start"] = df_demo["start"].map(dict_start)
-        df_demo["end"] = df_demo["end"].map(dict_start)
+
+        if df_vitals.shape[0]>0:
+            df_vitals["hadm_id"]= df_vitals["hadm_id"].map(dict_start)
+        if df_drugs.shape[0]>0:
+            df_drugs["hadm_id"]= df_drugs["hadm_id"].map(dict_start)
+        if df_diagnosis.shape[0]>0:
+            df_diagnosis["hadm_id"]= df_diagnosis["hadm_id"].map(dict_start)
+        if df_admission.shape[0]>0:
+            df_admission["hadm_id"] = df_admission["hadm_id"].map(dict_start)
+        if df_demo.shape[0]>0:
+            df_demo["start"] = df_demo["start"].map(dict_start)
+            df_demo["end"] = df_demo["end"].map(dict_start)
 
         df_admission.index = df_admission['hadm_id']
         df_admission= df_admission.sort_index()
 
 
+        if df_demo.shape[0]>0:
+            df_demo.dropna(inplace=True)
+            df_demo = df_demo.reset_index(drop=True)
+            df_demo['index_col'] = df_demo.index
+        if df_labs.shape[0]>0:
+            df_labs['index_col'] = df_labs.index
+        if df_vitals.shape[0]>0:
+            df_vitals['index_col'] = df_vitals.index
+        if df_admission.shape[0]>0:
+            df_admission['index_col'] = df_admission.index
+        if df_drugs.shape[0]>0:
+            df_drugs['index_col'] = df_drugs.index
+        if df_diagnosis.shape[0]>0:
+            df_diagnosis['index_col'] = df_diagnosis.index
+            
+
+        if df_labs.shape[0]>0:
+            df_labs['value'] = pd.to_numeric(df_labs['value'], errors='coerce',downcast='float')
+        if df_vitals.shape[0]>0:
+            df_vitals['value'] = pd.to_numeric(df_vitals['value'], errors='coerce',downcast='float')
         
-
-        # df_labs= df_labs[pd.to_numeric(df_labs['value'], errors='coerce').notnull()]
-        # df_labs['value'] = df_labs['value'].astype(float)
-        # df_labs = df_labs.reset_index(drop=True)
-
-        # df_drugs= df_drugs[pd.to_numeric(df_drugs['dosage_val'], errors='coerce').notnull()]
-        # df_drugs['dosage_val'] = df_drugs['dosage_val'].astype(float)
-        # df_drugs = df_drugs.reset_index(drop=True)
-        df_demo.dropna(inplace=True)
-        df_demo = df_demo.reset_index(drop=True)
-
-        df_labs['index_col'] = df_labs.index
-        df_vitals['index_col'] = df_vitals.index
-        df_admission['index_col'] = df_admission.index
-        df_drugs['index_col'] = df_drugs.index
-        df_diagnosis['index_col'] = df_diagnosis.index
-        df_demo['index_col'] = df_demo.index
-
-        df_labs['value'] = pd.to_numeric(df_labs['value'], errors='coerce',downcast='float')
-        df_vitals['value'] = pd.to_numeric(df_vitals['value'], errors='coerce',downcast='float')
-        df_drugs['dosage_val']= pd.to_numeric(df_drugs['dosage_val'], errors='coerce', downcast='float')
         #df_labs['value'] = df_labs['value'].astype(float)
         
-        df_admission['gender']= label_encoder.fit_transform(df_admission['gender']) 
-        df_admission['marital']= label_encoder.fit_transform(df_admission['marital']) 
-        df_admission['ethnicity']= label_encoder.fit_transform(df_admission['ethnicity']) 
-        df_admission['religion']= label_encoder.fit_transform(df_admission['religion'])
-        df_vitals['name']= label_encoder.fit_transform(df_vitals['name'])
-        df_demo['atype']= label_encoder.fit_transform(df_demo['atype'])
+        if df_admission.shape[0]>0:
+            df_admission['gender']= label_encoder.fit_transform(df_admission['gender']) 
+            df_admission['marital']= label_encoder.fit_transform(df_admission['marital']) 
+            df_admission['ethnicity']= label_encoder.fit_transform(df_admission['ethnicity']) 
+            df_admission['religion']= label_encoder.fit_transform(df_admission['religion'])
+        if df_vitals.shape[0]>0:
+            df_vitals['name']= label_encoder.fit_transform(df_vitals['name'])
+        if df_demo.shape[0]>0:
+            df_demo['atype']= label_encoder.fit_transform(df_demo['atype'])
 
 
         print("Patient label count: ",df_admission['label'].value_counts())
+        total = (df_admission['label'].value_counts()[0]+df_admission['label'].value_counts()[1])
+        weights = [df_admission['label'].value_counts()[1]/total,df_admission['label'].value_counts()[0]/total]
+        print(weights)
 
-        return df_admission,df_diagnosis,df_drugs,df_labs,df_vitals,df_diagnosis_features,df_demo
+        return df_admission,df_diagnosis,df_drugs,df_labs,df_vitals,df_diagnosis_features,df_demo, weights
 
